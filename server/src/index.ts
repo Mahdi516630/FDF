@@ -12,6 +12,8 @@ import rateLimit from "express-rate-limit";
 import { refereesRouter } from "./routes/referees.js";
 import { categoriesRouter } from "./routes/categories.js";
 import { designationsRouter } from "./routes/designations.js";
+import { adminRouter } from "./routes/admin.js";
+import { meRouter } from "./routes/me.js";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -39,11 +41,14 @@ app.use(
 app.use("/api/referees", refereesRouter);
 app.use("/api/categories", categoriesRouter);
 app.use("/api/designations", designationsRouter);
+app.use("/api/me", meRouter);
+app.use("/api/admin", adminRouter);
 
 app.use(errorHandler);
 
 // Frontend static hosting (Render single service)
-const distPath = path.resolve(__dirname, "../../my-app/dist");
+// __dirname is .../my-app/server/dist at runtime
+const distPath = path.resolve(__dirname, "../../dist");
 app.use(express.static(distPath));
 app.get(/^(?!\/api\/).*/, (_req, res) => {
   res.sendFile(path.join(distPath, "index.html"));

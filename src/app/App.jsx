@@ -6,6 +6,7 @@ import { RefereesTab } from "../features/referees/RefereesTab";
 import { CategoriesTab } from "../features/categories/CategoriesTab";
 import { DesignationsTab } from "../features/designations/DesignationsTab";
 import { ReportingTab } from "../features/reporting/ReportingTab";
+import { PendingUsersTab } from "../features/admin/PendingUsersTab";
 import { I } from "../ui/icons";
 import { Toaster, useToast } from "../ui/toast";
 
@@ -17,6 +18,8 @@ export default function App() {
   const [categories, setCategories] = useState([]);
   const [designations, setDesignations] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [pendingCount, setPendingCount] = useState(0);
 
   const refreshAll = useCallback(async () => {
     setLoading(true);
@@ -32,33 +35,49 @@ export default function App() {
 
   useEffect(() => {
     if (!getToken()) return;
-    refreshAll().catch(() => {
-      setToken(null);
-    });
+    (async () => {
+      try {
+        const me = await api.me();
+        setUser({ email: me.email });
+        setIsAdmin(!!me.isAdmin);
+        await refreshAll();
+      } catch {
+        setToken(null);
+      }
+    })();
   }, [refreshAll]);
 
   const logout = () => {
     setToken(null);
     setUser(null);
+    setIsAdmin(false);
+    setPendingCount(0);
     setReferees([]);
     setCategories([]);
     setDesignations([]);
   };
 
   const onAuthed = async (u) => {
+    // u may not include admin flags; fetch /me after auth
     setUser(u);
+    const me = await api.me();
+    setIsAdmin(!!me.isAdmin);
     await refreshAll();
   };
 
   const TABS = useMemo(
-    () => [
+    () => {
+      const base = [
       { id: "dashboard", label: "Dashboard", icon: I.bar },
       { id: "referees", label: "Arbitres", icon: I.users },
       { id: "categories", label: "Catégories", icon: I.tag },
       { id: "designations", label: "Désignations", icon: I.cal },
       { id: "reporting", label: "Net à Payer", icon: I.file },
-    ],
-    []
+      ];
+      if (isAdmin) base.push({ id: "admin", label: `Admin${pendingCount ? ` (${pendingCount})` : ""}`, icon: I.shield });
+      return base;
+    },
+    [isAdmin, pendingCount]
   );
 
   if (!getToken()) return <><AuthScreen onAuthed={onAuthed} /><Toaster toasts={toasts} /></>;
@@ -208,6 +227,15 @@ export default function App() {
           />
         )}
         {tab === "reporting" && <ReportingTab designations={designations} referees={referees} categories={categories} toast={toast} />}
+        {tab === "admin" && isAdmin && (
+          <PendingUsersTab
+            toast={toast}
+            onCount={(n) => {
+              setPendingCount(n);
+              if (n > 0) toast(`Nouvelles inscriptions en attente: ${n}`, "warning");
+            }}
+          />
+        )}
       </div>
 
       <div className="mobile-nav" style={{ display: "none", position: "fixed", bottom: 0, left: 0, right: 0, background: "rgba(7,16,29,.98)", borderTop: "1px solid rgba(255,255,255,.07)", padding: "6px 0", zIndex: 30 }}>

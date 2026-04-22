@@ -43,6 +43,11 @@ export const api = {
   login: (email, password) => request("/auth/login", { method: "POST", body: { email, password } }),
   register: (email, password) =>
     request("/auth/register", { method: "POST", body: { email, password } }),
+  me: () => request("/me"),
+
+  listPendingUsers: () => request("/admin/pending-users"),
+  approveUser: (id) => request(`/admin/approve/${id}`, { method: "POST" }),
+  rejectUser: (id) => request(`/admin/reject/${id}`, { method: "POST" }),
 
   listReferees: () => request("/referees"),
   addReferee: (r) => request("/referees", { method: "POST", body: r }),

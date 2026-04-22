@@ -14,8 +14,14 @@ export function seedIfEmpty(db: Database.Database) {
   if (usersCount.c === 0) {
     const pwHash = hashPassword("admin123");
     db.prepare(
-      "INSERT INTO users(id,email,password_hash,created_at) VALUES (?,?,?,?)"
-    ).run(nanoid(), "admin@fdf.dj", pwHash, now);
+      "INSERT INTO users(id,email,password_hash,is_admin,approved_at,created_at) VALUES (?,?,?,?,?,?)"
+    ).run(nanoid(), "admin@fdf.dj", pwHash, 1, now, now);
+  } else {
+    // Ensure admin stays admin + approved.
+    db.prepare("UPDATE users SET is_admin=1, approved_at=COALESCE(approved_at, ?) WHERE email=?").run(
+      now,
+      "admin@fdf.dj"
+    );
   }
 
   if (refsCount.c === 0) {

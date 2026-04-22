@@ -1,10 +1,37 @@
 {
-  "name": "fdf",
+  "name": "my-app",
   "private": true,
+  "version": "0.0.0",
+  "type": "module",
   "scripts": {
-    "build": "npm --prefix my-app install && npm --prefix my-app run build && npm --prefix server install && npm --prefix server run build",
+    "dev": "concurrently -k -n server,web -c green,cyan \"npm --prefix server run dev\" \"vite\"",
+    "build": "vite build",
+    "build:full": "npm install && npm run build && npm --prefix server install && npm --prefix server run build",
+    "lint": "eslint .",
+    "preview": "vite preview",
     "start": "node server/dist/index.js",
-    "dev": "npm --prefix server run dev",
-    "dev:frontend": "npm --prefix my-app run dev"
+    "start:full": "npm run build:full && npm run start"
+  },
+  "dependencies": {
+    "exceljs": "^4.4.0",
+    "react": "^19.2.5",
+    "react-dom": "^19.2.5",
+    "sql.js": "^1.14.1",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.29.0",
+    "@eslint/js": "^9.39.4",
+    "@rolldown/plugin-babel": "^0.2.3",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.1",
+    "babel-plugin-react-compiler": "^1.0.0",
+    "eslint": "^9.39.4",
+    "eslint-plugin-react-hooks": "^7.1.1",
+    "eslint-plugin-react-refresh": "^0.5.2",
+    "globals": "^17.5.0",
+    "concurrently": "^9.2.0",
+    "vite": "^8.0.9"
   }
 }

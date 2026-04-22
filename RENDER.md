@@ -3,21 +3,21 @@
 This repo is set up to deploy as **one Render Web Service**:
 
 - Backend: `server/` (Express + SQLite on disk)
-- Frontend: `my-app/` (Vite build served by the backend)
+- Frontend: Vite build served by the backend
 
 ### 1) Create the Web Service
 
-- **Root Directory**: leave empty (repo root)
+- **Root Directory**: `my-app`
 - **Build Command**:
 
 ```bash
-npm run build
+npm run build:full
 ```
 
 - **Start Command**:
 
 ```bash
-npm start
+npm run start:full
 ```
 
 ### 2) Add a persistent disk (required)

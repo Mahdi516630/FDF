@@ -16,6 +16,9 @@ export function openDb(): Db {
   db.pragma("journal_mode = WAL");
   db.pragma("foreign_keys = ON");
   db.exec(SCHEMA_SQL);
+  // Lightweight "migrations" for existing databases.
+  try { db.exec("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0"); } catch {}
+  try { db.exec("ALTER TABLE users ADD COLUMN approved_at TEXT"); } catch {}
   seedIfEmpty(db);
   return db;
 }

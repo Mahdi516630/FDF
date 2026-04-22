@@ -18,11 +18,21 @@ export function AuthScreen({ onAuthed }) {
       return;
     }
     try {
-      const res = mode === "login" ? await api.login(e, pw) : await api.register(e, pw);
-      setToken(res.token);
-      onAuthed?.(res.user);
+      if (mode === "login") {
+        const res = await api.login(e, pw);
+        setToken(res.token);
+        onAuthed?.(res.user);
+      } else {
+        const res = await api.register(e, pw);
+        if (res?.pending) {
+          setErr("Votre compte est créé et en attente de validation par l'administrateur (admin@fdf.dj).");
+          setMode("login");
+          setPw("");
+        }
+      }
     } catch (ex) {
       if (ex?.message === "InvalidCredentials") setErr("Email ou mot de passe incorrect.");
+      else if (ex?.message === "NotApproved") setErr("Votre compte n'est pas encore approuvé par l'administrateur.");
       else if (ex?.message === "EmailExists") setErr("Email déjà utilisé.");
       else if (ex?.message === "ValidationError") setErr("Données invalides.");
       else setErr("Erreur.");
