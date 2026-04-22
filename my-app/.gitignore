@@ -12,12 +12,6 @@ dist
 dist-ssr
 *.local
 
-# Server build + local sqlite
-server/dist
-*.sqlite
-*.sqlite-wal
-*.sqlite-shm
-
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
