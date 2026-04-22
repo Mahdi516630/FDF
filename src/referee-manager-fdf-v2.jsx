@@ -1,6 +1,8 @@
 import { useState, useEffect, useCallback, useMemo, useRef } from "react";
 import * as XLSX from "xlsx";
 import ExcelJS from "exceljs";
+import { initFdfDb } from "./db/sqlite";
+import { repo as makeRepo } from "./db/fdfRepo";
 
 /* ═══════════════════════════════════════════════════════════════════
    ICONS
@@ -42,10 +44,7 @@ const genId = () => Math.random().toString(36).substr(2, 9);
 const fmt = (n) => (n || 0).toLocaleString("fr-FR");
 const today = new Date().toISOString().slice(0, 10);
 
-const storage = {
-  get: (k, d) => { try { const v = localStorage.getItem(k); return v ? JSON.parse(v) : d; } catch { return d; } },
-  set: (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch {} },
-};
+// localStorage was replaced by a portable embedded SQLite DB (browser WASM + IndexedDB persistence).
 
 /* ═══════════════════════════════════════════════════════════════════
    SEED DATA
@@ -387,23 +386,16 @@ function AuthScreen({ onLogin }) {
   const [show, setShow] = useState(false);
   const [err, setErr] = useState("");
 
-  const UKEY = "fdf_users";
-  const getUsers = () => storage.get(UKEY, [{ email:"admin@fdf.dj", password:"admin123" }]);
-
-  const handle = () => {
+  const handle = async () => {
     setErr("");
     const e = email.toLowerCase().trim();
     if (!e||!pw) { setErr("Tous les champs sont requis."); return; }
-    const users = getUsers();
-    if (mode==="login") {
-      const u = users.find(u=>u.email===e&&u.password===pw);
-      if (!u) { setErr("Email ou mot de passe incorrect."); return; }
-    } else {
-      if (users.find(u=>u.email===e)) { setErr("Email déjà utilisé."); return; }
-      if (pw.length<6) { setErr("Mot de passe trop court (min 6)."); return; }
-      storage.set(UKEY,[...users,{email:e,password:pw}]);
+    try {
+      await onLogin({ email: e, password: pw, mode });
+      setPw("");
+    } catch (ex) {
+      setErr(ex?.message || "Erreur.");
     }
-    onLogin({ email: e, token: genId() });
   };
 
   return (
@@ -461,7 +453,7 @@ function AuthScreen({ onLogin }) {
 /* ═══════════════════════════════════════════════════════════════════
    ARBITRES TAB
 ═══════════════════════════════════════════════════════════════════ */
-function RefereesTab({ referees, setReferees, toast }) {
+function RefereesTab({ referees, setReferees, toast, dbState, refreshAll }) {
   const [search, setSearch] = useState("");
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name:"", phone:"", level:"National A" });
@@ -476,10 +468,14 @@ function RefereesTab({ referees, setReferees, toast }) {
     if (!form.name.trim()) { toast("Le nom est requis.","error"); return; }
     if (modal==="add") {
       const nr = { id:genId(), name:form.name.trim(), phone:form.phone.trim(), level:form.level, createdAt:today };
-      setReferees(prev=>{ const n=[...prev,nr]; storage.set("fdf_refs",n); return n; });
+      dbState.r.addReferee(nr);
+      dbState.persist();
+      refreshAll();
       toast("Arbitre ajouté !");
     } else {
-      setReferees(prev=>{ const n=prev.map(r=>r.id===modal?{...r,...form}:r); storage.set("fdf_refs",n); return n; });
+      dbState.r.updateReferee(modal, { ...form, phone: form.phone.trim(), name: form.name.trim() });
+      dbState.persist();
+      refreshAll();
       toast("Arbitre modifié !");
     }
     setModal(null);
@@ -487,7 +483,14 @@ function RefereesTab({ referees, setReferees, toast }) {
 
   const del = (id) => {
     if (!confirm("Supprimer cet arbitre ?")) return;
-    setReferees(prev=>{ const n=prev.filter(r=>r.id!==id); storage.set("fdf_refs",n); return n; });
+    try {
+      dbState.r.deleteReferee(id);
+      dbState.persist();
+      refreshAll();
+    } catch {
+      toast("Impossible: arbitre utilisé dans une désignation.","error");
+      return;
+    }
     toast("Supprimé.","warning");
   };
 
@@ -558,7 +561,7 @@ function RefereesTab({ referees, setReferees, toast }) {
 /* ═══════════════════════════════════════════════════════════════════
    CATEGORIES TAB
 ═══════════════════════════════════════════════════════════════════ */
-function CategoriesTab({ categories, setCategories, toast }) {
+function CategoriesTab({ categories, setCategories, toast, dbState, refreshAll }) {
   const [modal, setModal] = useState(null);
   const [form, setForm] = useState({ name:"", centralfee:"", assistantfee:"", fourthfee:"" });
 
@@ -566,10 +569,14 @@ function CategoriesTab({ categories, setCategories, toast }) {
     if (!form.name.trim()||!form.centralfee||!form.assistantfee||!form.fourthfee) { toast("Tous les champs sont requis.","error"); return; }
     const data = { name:form.name.trim(), centralfee:Number(form.centralfee), assistantfee:Number(form.assistantfee), fourthfee:Number(form.fourthfee) };
     if (modal==="add") {
-      setCategories(prev=>{ const n=[...prev,{id:genId(),...data}]; storage.set("fdf_cats",n); return n; });
+      dbState.r.addCategory({ id: genId(), ...data });
+      dbState.persist();
+      refreshAll();
       toast("Catégorie ajoutée !");
     } else {
-      setCategories(prev=>{ const n=prev.map(c=>c.id===modal?{...c,...data}:c); storage.set("fdf_cats",n); return n; });
+      dbState.r.updateCategory(modal, data);
+      dbState.persist();
+      refreshAll();
       toast("Modifiée !");
     }
     setModal(null);
@@ -587,7 +594,17 @@ function CategoriesTab({ categories, setCategories, toast }) {
               <div style={{ display:"flex", alignItems:"center", gap:9 }}><span style={{ color:"#10b981" }}>{I.tag}</span><span style={{ color:"#f0fdf4", fontWeight:800, fontSize:15 }}>{c.name}</span></div>
               <div style={{ display:"flex", gap:8 }}>
                 <button onClick={()=>{ setForm({name:c.name,centralfee:String(c.centralfee),assistantfee:String(c.assistantfee),fourthfee:String(c.fourthfee)}); setModal(c.id); }} style={{ background:"rgba(59,130,246,.1)", border:"none", borderRadius:6, padding:6, cursor:"pointer", color:"#60a5fa" }}>{I.edit}</button>
-                <button onClick={()=>{ if(!confirm("Supprimer ?"))return; setCategories(prev=>{ const n=prev.filter(x=>x.id!==c.id); storage.set("fdf_cats",n); return n; }); toast("Supprimée.","warning"); }} style={{ background:"rgba(239,68,68,.1)", border:"none", borderRadius:6, padding:6, cursor:"pointer", color:"#f87171" }}>{I.trash}</button>
+                <button onClick={()=>{ 
+                  if(!confirm("Supprimer ?"))return; 
+                  try {
+                    dbState.r.deleteCategory(c.id);
+                    dbState.persist();
+                    refreshAll();
+                    toast("Supprimée.","warning");
+                  } catch {
+                    toast("Impossible: catégorie utilisée dans une désignation.","error");
+                  }
+                }} style={{ background:"rgba(239,68,68,.1)", border:"none", borderRadius:6, padding:6, cursor:"pointer", color:"#f87171" }}>{I.trash}</button>
               </div>
             </div>
             <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8 }}>
@@ -623,7 +640,7 @@ function CategoriesTab({ categories, setCategories, toast }) {
 /* ═══════════════════════════════════════════════════════════════════
    DESIGNATIONS TAB  (+ Export XLS sélectif)
 ═══════════════════════════════════════════════════════════════════ */
-function DesignationsTab({ designations, setDesignations, referees, categories, toast }) {
+function DesignationsTab({ designations, setDesignations, referees, categories, toast, dbState, refreshAll }) {
   const [search, setSearch] = useState("");
   const [filterCat, setFilterCat] = useState("all");
   const [modal, setModal] = useState(null);
@@ -659,7 +676,9 @@ function DesignationsTab({ designations, setDesignations, referees, categories, 
     if (new Set(roles).size!==roles.length) { toast("Un arbitre ne peut avoir deux rôles.","error"); return; }
     if (modal==="add") {
       const nd={id:genId(),...form};
-      setDesignations(prev=>{ const n=[nd,...prev]; storage.set("fdf_desigs",n); return n; });
+      dbState.r.addDesignation(nd);
+      dbState.persist();
+      refreshAll();
       toast("Désignation créée !");
     }
     setModal(null);
@@ -667,7 +686,9 @@ function DesignationsTab({ designations, setDesignations, referees, categories, 
 
   const del = (id) => {
     if (!confirm("Supprimer ?")) return;
-    setDesignations(prev=>{ const n=prev.filter(d=>d.id!==id); storage.set("fdf_desigs",n); return n; });
+    dbState.r.deleteDesignation(id);
+    dbState.persist();
+    refreshAll();
     setSelected(prev=>{ const n=new Set(prev); n.delete(id); return n; });
     toast("Supprimée.","warning");
   };
@@ -1036,16 +1057,63 @@ function Dashboard({ designations, referees, categories }) {
    MAIN APP
 ═══════════════════════════════════════════════════════════════════ */
 export default function App() {
-  const [user, setUser] = useState(()=>storage.get("fdf_user",null));
+  const [dbState, setDbState] = useState({ ready: false, db: null, r: null, persist: null });
+  const [user, setUser] = useState(null);
   const [tab, setTab] = useState("dashboard");
-  const [referees, setReferees] = useState(()=>storage.get("fdf_refs",SEED_REFS));
-  const [categories, setCategories] = useState(()=>storage.get("fdf_cats",SEED_CATS));
-  const [designations, setDesignations] = useState(()=>storage.get("fdf_desigs",SEED_DESIGS));
+  const [referees, setReferees] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [designations, setDesignations] = useState([]);
   const { toasts, toast } = useToast();
 
-  const onLogin = (u)=>{ storage.set("fdf_user",u); setUser(u); };
-  const logout = ()=>{ storage.set("fdf_user",null); setUser(null); };
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const { db, persist } = await initFdfDb({
+        seed: { seedRefs: SEED_REFS, seedCats: SEED_CATS, seedDesigs: SEED_DESIGS },
+      });
+      const r = makeRepo(db);
+      if (cancelled) return;
+      setDbState({ ready: true, db, r, persist });
+      // load initial data
+      setReferees(r.listReferees());
+      setCategories(r.listCategories());
+      setDesignations(r.listDesignations());
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
+  const refreshAll = useCallback(() => {
+    if (!dbState.ready) return;
+    setReferees(dbState.r.listReferees());
+    setCategories(dbState.r.listCategories());
+    setDesignations(dbState.r.listDesignations());
+  }, [dbState]);
+
+  const onLogin = async ({ email, password, mode }) => {
+    if (!dbState.ready) throw new Error("Base de données en cours de chargement…");
+    const existing = dbState.r.getUserByEmail(email);
+    if (mode === "login") {
+      if (!existing || existing.password !== password) throw new Error("Email ou mot de passe incorrect.");
+    } else {
+      if (existing) throw new Error("Email déjà utilisé.");
+      if (password.length < 6) throw new Error("Mot de passe trop court (min 6).");
+      dbState.r.createUser({ email, password });
+      await dbState.persist();
+    }
+    setUser({ email, token: genId() });
+  };
+
+  const logout = ()=>{ setUser(null); };
+
+  if (!dbState.ready) {
+    return (
+      <div style={{ minHeight:"100vh", background:"#07101d", display:"flex", alignItems:"center", justifyContent:"center", fontFamily:"'Syne',sans-serif", color:"#9ca3af" }}>
+        Chargement de la base de données…
+      </div>
+    );
+  }
   if (!user) return <><AuthScreen onLogin={onLogin}/><Toaster toasts={toasts}/></>;
 
   const TABS = [
@@ -1117,9 +1185,9 @@ export default function App() {
           <p style={{ margin:"3px 0 0", color:"#1f2937", fontSize:11, fontFamily:"'JetBrains Mono',monospace" }}>{new Date().toLocaleDateString("fr-FR",{weekday:"long",year:"numeric",month:"long",day:"numeric"})}</p>
         </div>
         {tab==="dashboard"    && <Dashboard designations={designations} referees={referees} categories={categories}/>}
-        {tab==="referees"     && <RefereesTab referees={referees} setReferees={setReferees} toast={toast}/>}
-        {tab==="categories"   && <CategoriesTab categories={categories} setCategories={setCategories} toast={toast}/>}
-        {tab==="designations" && <DesignationsTab designations={designations} setDesignations={setDesignations} referees={referees} categories={categories} toast={toast}/>}
+        {tab==="referees"     && <RefereesTab referees={referees} setReferees={setReferees} toast={toast} dbState={dbState} refreshAll={refreshAll} />}
+        {tab==="categories"   && <CategoriesTab categories={categories} setCategories={setCategories} toast={toast} dbState={dbState} refreshAll={refreshAll} />}
+        {tab==="designations" && <DesignationsTab designations={designations} setDesignations={setDesignations} referees={referees} categories={categories} toast={toast} dbState={dbState} refreshAll={refreshAll} />}
         {tab==="reporting"    && <ReportingTab designations={designations} referees={referees} categories={categories} toast={toast}/>}
       </div>
 
