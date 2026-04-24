@@ -1,18 +1,11 @@
 import { z } from "zod";
-import { IdSchema } from "./common.js";
+import { REFEREE_LEVELS } from "../db/schema.js";
 
-export const RefereeSchema = z.object({
-  id: IdSchema,
-  name: z.string().min(1),
-  phone: z.string().optional().default(""),
-  level: z.string().optional().default(""),
+export const RefereeCreateSchema = z.object({
+  name:     z.string().min(1).max(120).transform(s => s.trim()),
+  phone:    z.string().max(30).optional(),
+  level:    z.enum(REFEREE_LEVELS).optional(),
+  photoUrl: z.string().url().optional(),
 });
 
-export const RefereeCreateSchema = RefereeSchema;
-
-export const RefereeUpdateSchema = z.object({
-  name: z.string().min(1),
-  phone: z.string().optional().default(""),
-  level: z.string().optional().default(""),
-});
-
+export const RefereeUpdateSchema = RefereeCreateSchema.partial();

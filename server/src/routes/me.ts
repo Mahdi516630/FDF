@@ -1,17 +1,17 @@
 import { Router } from "express";
-import { db } from "../index.js";
-import { requireAuth } from "../middleware/auth.js";
+import { db } from "../db/client.js";
+import { users } from "../db/schema.js";
+import { eq } from "drizzle-orm";
+import { requireAuth, type AuthedRequest } from "../middleware/auth.js";
 
 export const meRouter = Router();
 meRouter.use(requireAuth);
 
-meRouter.get("/", (req, res) => {
-  const id = (req as any).user?.id as string | undefined;
-  if (!id) return res.status(401).json({ error: "Unauthorized" });
-  const row = db.prepare("SELECT email,is_admin as isAdmin FROM users WHERE id=?").get(id) as
-    | { email: string; isAdmin: number }
-    | undefined;
-  if (!row) return res.status(401).json({ error: "Unauthorized" });
-  res.json({ email: row.email, isAdmin: !!row.isAdmin });
+meRouter.get("/", async (req: AuthedRequest, res, next) => {
+  try {
+    const [user] = await db.select({ email: users.email, role: users.role })
+      .from(users).where(eq(users.id, req.user!.id)).limit(1);
+    if (!user) return res.status(401).json({ error: "Unauthorized" });
+    res.json({ email: user.email, role: user.role, isAdmin: user.role === "admin" });
+  } catch (err) { next(err); }
 });
-

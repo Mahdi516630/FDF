@@ -1,18 +1,15 @@
+// =============================================================================
+// server/src/validation/categories.ts
+// =============================================================================
 import { z } from "zod";
-import { IdSchema } from "./common.js";
+
+const FeeSchema = z.number().int().nonnegative();
 
 export const CategoryCreateSchema = z.object({
-  id: IdSchema,
-  name: z.string().min(1),
-  centralfee: z.number().int().nonnegative(),
-  assistantfee: z.number().int().nonnegative(),
-  fourthfee: z.number().int().nonnegative(),
+  name:         z.string().min(1).max(80).transform(s => s.trim()),
+  centralFee:   FeeSchema,
+  assistantFee: FeeSchema,
+  fourthFee:    FeeSchema,
 });
 
-export const CategoryUpdateSchema = z.object({
-  name: z.string().min(1),
-  centralfee: z.number().int().nonnegative(),
-  assistantfee: z.number().int().nonnegative(),
-  fourthfee: z.number().int().nonnegative(),
-});
-
+export const CategoryUpdateSchema = CategoryCreateSchema.partial();

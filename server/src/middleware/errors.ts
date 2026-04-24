@@ -5,8 +5,12 @@ export function errorHandler(err: unknown, _req: Request, res: Response, _next: 
   if (err instanceof ZodError) {
     return res.status(400).json({ error: "ValidationError", details: err.flatten() });
   }
-  // eslint-disable-next-line no-console
-  console.error(err);
-  return res.status(500).json({ error: "InternalServerError" });
+  const msg = err instanceof Error ? err.message : "InternalError";
+  const status = (err as any)?.status ?? 500;
+  if (status >= 500) console.error("[error]", err);
+  return res.status(status).json({ error: msg });
 }
 
+export function notFound(_req: Request, res: Response) {
+  res.status(404).json({ error: "NotFound" });
+}

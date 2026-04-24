@@ -1,0 +1,32 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  font-family: "Syne", system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #07101d;
+  color: #f0fdf4;
+}
+
+::-webkit-scrollbar {
+  width: 5px;
+  height: 5px;
+}
+::-webkit-scrollbar-track {
+  background: #07101d;
+}
+::-webkit-scrollbar-thumb {
+  background: #1a3050;
+  border-radius: 3px;
+}
+
+input,
+select,
+textarea {
+  font-family: inherit;
+}

@@ -1,43 +1,50 @@
+// =============================================================================
+// server/src/routes/auth.ts
+// =============================================================================
 import { Router } from "express";
-import { db } from "../index.js";
+import { db } from "../db/client.js";
+import { users } from "../db/schema.js";
+import { eq } from "drizzle-orm";
 import { LoginSchema, RegisterSchema } from "../validation/auth.js";
-import { nanoid } from "../util/nanoid.js";
 import { hashPassword, verifyPassword } from "../security/password.js";
 import { signJwt } from "../security/jwt.js";
 
 export const authRouter = Router();
 
-authRouter.post("/login", (req, res) => {
-  const body = LoginSchema.parse(req.body);
-  const user = db
-    .prepare("SELECT id,email,password_hash,is_admin,approved_at FROM users WHERE email = ?")
-    .get(body.email.toLowerCase()) as
-      | { id: string; email: string; password_hash: string; is_admin: number; approved_at: string | null }
-      | undefined;
-  if (!user) return res.status(401).json({ error: "InvalidCredentials" });
-  if (!user.approved_at) return res.status(403).json({ error: "NotApproved" });
-  if (!verifyPassword(body.password, user.password_hash))
-    return res.status(401).json({ error: "InvalidCredentials" });
-  const token = signJwt({ sub: user.id, email: user.email });
-  return res.json({ token, user: { email: user.email, isAdmin: !!user.is_admin } });
+authRouter.post("/login", async (req, res, next) => {
+  try {
+    const body = LoginSchema.parse(req.body);
+    const [user] = await db.select().from(users)
+      .where(eq(users.email, body.email.toLowerCase()))
+      .limit(1);
+
+    if (!user) return res.status(401).json({ error: "InvalidCredentials" });
+    if (!user.approvedAt) return res.status(403).json({ error: "NotApproved" });
+    if (!(await verifyPassword(body.password, user.passwordHash)))
+      return res.status(401).json({ error: "InvalidCredentials" });
+
+    const token = signJwt({ sub: user.id, email: user.email, role: user.role });
+    return res.json({
+      token,
+      user: { email: user.email, role: user.role, isAdmin: user.role === "admin" },
+    });
+  } catch (err) { next(err); }
 });
 
-authRouter.post("/register", (req, res) => {
-  const body = RegisterSchema.parse(req.body);
-  const email = body.email.toLowerCase();
-  const exists = db.prepare("SELECT 1 FROM users WHERE email=?").get(email);
-  if (exists) return res.status(409).json({ error: "EmailExists" });
-  const id = nanoid();
-  const hash = hashPassword(body.password);
-  db.prepare("INSERT INTO users(id,email,password_hash,is_admin,approved_at,created_at) VALUES (?,?,?,?,?,?)").run(
-    id,
-    email,
-    hash,
-    0,
-    null,
-    new Date().toISOString()
-  );
-  // Registration requires admin approval.
-  return res.status(201).json({ pending: true });
-});
+authRouter.post("/register", async (req, res, next) => {
+  try {
+    const body = RegisterSchema.parse(req.body);
+    const email = body.email.toLowerCase();
+    const [exists] = await db.select({ id: users.id }).from(users)
+      .where(eq(users.email, email)).limit(1);
+    if (exists) return res.status(409).json({ error: "EmailExists" });
 
+    await db.insert(users).values({
+      email,
+      passwordHash: await hashPassword(body.password),
+      role: "user",
+      approvedAt: null,
+    });
+    return res.status(201).json({ pending: true });
+  } catch (err) { next(err); }
+});
